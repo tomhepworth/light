@@ -6,17 +6,16 @@ from datetime import datetime
 from PIL import ImageFont
 from PIL import ImageDraw
 from PIL import Image
+
+import subprocess
+from subprocess import PIPE
 import sys
 import time
 import numpy as np
 import threading
 import RPi.GPIO as GPIO
 
-BL_PIN = 19
-# GPIO.setwarnings(False)			#disable warnings
-# GPIO.setmode(GPIO.BOARD)		#set pin numbering system
-# GPIO.setup(BL_PIN,GPIO.OUT)
-
+DEV_MODE = True
 
 # Create ST7789 LCD display class.
 disp = ST7789.ST7789(
@@ -56,7 +55,7 @@ HIGHLIGHT_TEXT_COLOUR = (0, 0, 0)
 SUNRISE_COLOURS = [(45, 29, 122), (87, 49, 112), (128, 69, 101), (170, 88, 91), (211, 108, 80),
                    (253, 128, 70), (253, 128, 70), (240, 185, 74), (158, 255, 242), (219, 255, 250)]
 BG_COLOUR = (0, 0, 0)  # SUNRISE_COLOURS[phase % len(SUNRISE_COLOURS)]
-CURRENT_PAGE = "NewAlarm"
+CURRENT_PAGE = "Main"
 ENCODER_VALUE = 0
 ENCODER_CLICK = False
 
@@ -156,6 +155,16 @@ def drawPage_Main():  # Reset background to blank colour
     main_time_y = (HEIGHT - time_now_text_size_y) / 2
     drawText(main_time_x, main_time_y, time_now_text,
              font_MainTime, TEXT_COLOUR, (0, 0, 0), 3, True)
+
+    if(DEV_MODE):  # Draw ip addr on main screen
+        cmd = 'ifconfig | grep "inet" | grep "192" | awk \'{print $2}\''
+        ip = subprocess.run(cmd, stdout=PIPE, stderr=PIPE,
+                            universal_newlines=True, shell=True).stdout
+        # print(ip)
+        smallfont = ImageFont.truetype(
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 16)
+        drawText(MARGIN_X, 40, ip,
+                 smallfont, TEXT_COLOUR, (0, 0, 0), 1, True)
 
     return
 
