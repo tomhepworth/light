@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from ast import Return
 import ST7789
 from datetime import time as dtTime
 from datetime import datetime
@@ -37,8 +38,6 @@ WIDTH = 240
 HEIGHT = 240
 MARGIN_X = 5
 MARGIN_Y = 1
-ALARM_TIME = "07:00"
-
 
 img = Image.new('RGB', (WIDTH, HEIGHT), color=(0, 0, 0))
 draw = ImageDraw.Draw(img)
@@ -49,10 +48,6 @@ font_MainTime = ImageFont.truetype(
     "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 70)
 iconFont = ImageFont.truetype("IconBitOne.ttf", 30)
 
-alarm_text_size_x, alarm_text_size_y = draw.textsize(ALARM_TIME, font)
-icon_size_x, icon_size_y = draw.textsize("q ", font)
-alarm_text_size_x, alarm_text_size_y = draw.textsize(ALARM_TIME, font)
-
 time_now = datetime.now()
 
 TEXT_COLOUR = (130, 130, 130)
@@ -61,7 +56,7 @@ HIGHLIGHT_TEXT_COLOUR = (0, 0, 0)
 SUNRISE_COLOURS = [(45, 29, 122), (87, 49, 112), (128, 69, 101), (170, 88, 91), (211, 108, 80),
                    (253, 128, 70), (253, 128, 70), (240, 185, 74), (158, 255, 242), (219, 255, 250)]
 BG_COLOUR = (0, 0, 0)  # SUNRISE_COLOURS[phase % len(SUNRISE_COLOURS)]
-CURRENT_PAGE = "Main"
+CURRENT_PAGE = "NewAlarm"
 ENCODER_VALUE = 0
 ENCODER_CLICK = False
 
@@ -143,6 +138,9 @@ def drawPage_Main():  # Reset background to blank colour
     next_alarm_text = getNextAlarmText()
 
     draw.rectangle((0, 0, WIDTH, HEIGHT), BG_COLOUR)
+
+    icon_size_x, icon_size_y = draw.textsize(
+        "q ", iconFont)
 
     # Alarm time text
     drawText(MARGIN_X, MARGIN_Y, "q ", iconFont,
@@ -233,10 +231,10 @@ def drawPage_Alarms():
 
             if(ENCODER_CLICK):
                 if(i == 0):
-                    CURRENT_PAGE = "Main"
+                    setPage("Main")
                     return
                 elif(i == len(ALARMS) - 1):
-                    CURRENT_PAGE = "NewAlarm"
+                    setPage("NewAlarm")
                     return
                 else:
                     alarm[1] = False if alarm[1] else True  # negate it
@@ -291,6 +289,133 @@ def drawPage_Settings():
     return
 
 
+SELECTED_HOURS = 2
+SELECTED_MINS = 33
+EDITING_ALARM_TIME = False
+NEW_ALARM_PREV_ENCODER_VAL = 0
+NEW_ALARM_CURSOR_POS = 0  # 0 = cancel, 1 = hours, 2 = mins, 3 = save
+NEW_ALARM_CACHED_ENCODER_VAL = 0
+
+
+def drawPage_NewAlarm():
+    global SELECTED_HOURS
+    global SELECTED_MINS
+    global NEW_ALARM_CURSOR_POS
+    global NEW_ALARM_PREV_ENCODER_VAL
+    global EDITING_ALARM_TIME
+    global ENCODER_CLICK
+    global ENCODER_VALUE
+    global NEW_ALARM_CACHED_ENCODER_VAL
+
+    draw.rectangle((0, 0, WIDTH, HEIGHT), BG_COLOUR)
+
+    # Handle click
+    if(ENCODER_CLICK):
+
+        # If cursor is on cancel or save, do thing and change page
+        if NEW_ALARM_CURSOR_POS == 0:  # cancel
+            setPage("Main")
+            return
+        elif NEW_ALARM_CURSOR_POS == 3:  # save
+            # insert in penultimate slot because last index must contain "Back"
+            ALARMS.insert(-1, [dtTime(SELECTED_HOURS, SELECTED_MINS, 0), True])
+            setPage("Main")
+            return
+        # Else toggle edit mode
+        else:
+            EDITING_ALARM_TIME = False if EDITING_ALARM_TIME else True
+
+            if EDITING_ALARM_TIME:
+                NEW_ALARM_CACHED_ENCODER_VAL = ENCODER_VALUE
+            else:
+                ENCODER_VALUE = NEW_ALARM_CACHED_ENCODER_VAL
+
+            ENCODER_CLICK = False
+
+    # Handle editing hours time
+    hours_text = "{:02d}".format(SELECTED_HOURS)
+    mins_text = "{:02d}".format(SELECTED_MINS)
+
+    if(EDITING_ALARM_TIME):
+        # If editing, cursor moves selected time
+        if(ENCODER_VALUE > NEW_ALARM_PREV_ENCODER_VAL):
+            # encoder increased, increment hour
+            if(NEW_ALARM_CURSOR_POS == 1):
+                SELECTED_HOURS = (SELECTED_HOURS + 1) % 24
+            elif(NEW_ALARM_CURSOR_POS == 2):
+                SELECTED_MINS = (SELECTED_MINS + 1) % 60
+
+        elif(ENCODER_VALUE < NEW_ALARM_PREV_ENCODER_VAL):
+            # encoder decreased, increment selected
+            if(NEW_ALARM_CURSOR_POS == 1):
+                SELECTED_HOURS = (SELECTED_HOURS - 1) % 24
+            elif(NEW_ALARM_CURSOR_POS == 2):
+                SELECTED_MINS = (SELECTED_MINS - 1) % 60
+
+    else:
+        # If not editing, encoder moves cursor
+        NEW_ALARM_CURSOR_POS = ENCODER_VALUE % 4
+
+    # Draw
+    time_font = ImageFont.truetype(
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", int(40))
+    hours_text_size_x, hours_text_size_y = draw.textsize(hours_text, time_font)
+    colon_text_size_x, colon_text_size_y = draw.textsize(":", time_font)
+    mins_text_size_x, mins_text_size_y = draw.textsize(mins_text, time_font)
+
+    button_font = ImageFont.truetype(
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", int(30))
+
+    save_text_size_x, save_text_size_y = draw.textsize(
+        "Save Alarm", button_font)
+
+    cancel_text_size_x, cancel_text_size_y = draw.textsize(
+        "Cancel", button_font)
+
+    # Draw cursor box
+    if(NEW_ALARM_CURSOR_POS == 0):  # Box over cancel button
+        draw.rectangle(
+            ((WIDTH - cancel_text_size_x) / 2,
+             (HEIGHT - cancel_text_size_y) / 2 - 60, (WIDTH + cancel_text_size_x) / 2, (HEIGHT -
+             cancel_text_size_y) / 2 - 60 + cancel_text_size_y + 5),
+            HIGHLIGHT_COLOUR)
+
+    elif(NEW_ALARM_CURSOR_POS == 1):  # Box over hours
+        draw.rectangle(((WIDTH - hours_text_size_x) / 2 - hours_text_size_x,  (HEIGHT - hours_text_size_y) / 2,
+                       (WIDTH - hours_text_size_x) / 2,  (HEIGHT + hours_text_size_y) / 2 + 5), HIGHLIGHT_COLOUR)
+    elif(NEW_ALARM_CURSOR_POS == 2):  # Box over mins
+        draw.rectangle(((WIDTH + mins_text_size_x) / 2 + mins_text_size_x,  (HEIGHT - mins_text_size_y) / 2,
+                       (WIDTH - mins_text_size_x) / 2 + mins_text_size_x,  (HEIGHT + mins_text_size_y) / 2 + 5), HIGHLIGHT_COLOUR)
+    elif(NEW_ALARM_CURSOR_POS == 3):  # Box over save button
+        draw.rectangle(
+            ((WIDTH - save_text_size_x) / 2,
+             (HEIGHT - save_text_size_y) / 2 + 60, (WIDTH + save_text_size_x) / 2, (HEIGHT -
+             save_text_size_y) / 2 + 60 + save_text_size_y + 5),
+            HIGHLIGHT_COLOUR)
+    # Hours
+    drawText((WIDTH - hours_text_size_x) / 2 - hours_text_size_x,  (HEIGHT - hours_text_size_y) /
+             2, hours_text, time_font, (TEXT_COLOUR if (NEW_ALARM_CURSOR_POS != 1) else (HIGHLIGHT_TEXT_COLOUR)), (HIGHLIGHT_TEXT_COLOUR if (NEW_ALARM_CURSOR_POS != 1) else (TEXT_COLOUR)), 1, True)
+
+    # Colon
+    drawText((WIDTH - colon_text_size_x) / 2,  (HEIGHT - colon_text_size_y) /
+             2, ":", time_font, TEXT_COLOUR, (0, 0, 0), 1, True)
+
+    # Mins
+    drawText((WIDTH - mins_text_size_x) / 2 + mins_text_size_x,  (HEIGHT - mins_text_size_y) /
+             2, mins_text, time_font, (TEXT_COLOUR if (NEW_ALARM_CURSOR_POS != 2) else (HIGHLIGHT_TEXT_COLOUR)), (HIGHLIGHT_TEXT_COLOUR if (NEW_ALARM_CURSOR_POS != 2) else (TEXT_COLOUR)), 1, True)
+
+    # Save
+    drawText((WIDTH - save_text_size_x) / 2,  (HEIGHT - save_text_size_y) /
+             2 + 60, "Save Alarm", button_font, (TEXT_COLOUR if (NEW_ALARM_CURSOR_POS != 3) else (HIGHLIGHT_TEXT_COLOUR)), (HIGHLIGHT_TEXT_COLOUR if (NEW_ALARM_CURSOR_POS != 3) else (TEXT_COLOUR)), 1, True)
+
+    # Cancel
+    drawText((WIDTH - cancel_text_size_x) / 2,  (HEIGHT - cancel_text_size_y) /
+             2 - 60, "Cancel", button_font, (TEXT_COLOUR if (NEW_ALARM_CURSOR_POS != 0) else (HIGHLIGHT_TEXT_COLOUR)), (HIGHLIGHT_TEXT_COLOUR if (NEW_ALARM_CURSOR_POS != 0) else (TEXT_COLOUR)), 1, True)
+
+    NEW_ALARM_PREV_ENCODER_VAL = ENCODER_VALUE
+    return
+
+
 def kbdListener():
     global key_input
     while 1:
@@ -298,7 +423,7 @@ def kbdListener():
 
 
 PAGES = [("Main", drawPage_Main), ("Menu", drawPage_Menu), ("Alarms",
-                                                            drawPage_Alarms), ("Mode", drawPage_Mode), ("Setings", drawPage_Settings)]
+                                                            drawPage_Alarms), ("Mode", drawPage_Mode), ("Setings", drawPage_Settings), ("NewAlarm", drawPage_NewAlarm)]
 
 initialised_kbdListener = False
 
